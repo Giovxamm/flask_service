@@ -12,6 +12,7 @@ jobs:
       REPO_NAME: rest-service-repo-dev  # Nome del repository ECR
       IMAGE_NAME: rest-service-dev      # Nome dell'immagine
       REGION: eu-south-1                # Regione di ECR
+      SERVICE_NAME: rest-service
 
     steps:
       # Step 1: Checkout del codice
