@@ -57,28 +57,29 @@ jobs:
           echo "SUBNETS=$SUBNETS" >> $GITHUB_ENV
           echo "SG_ID=$SG_ID" >> $GITHUB_ENV
 
-      # Step 6: Aggiorna la Task Definition
-      - name: Update or Create Task Definition
+            # Step 6: Verifica se la task definition esiste e aggiorna o crea
+      - name: Check if Task Definition exists and update or create
         run: |
+          # Ottieni l'ID account AWS
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          REGION=${{ env.REGION }}
-
+          REGION=eu-south-1  # Sostituisci con la tua regione
+          
           # Verifica se la task definition esiste
-          TASK_DEFINITION_EXISTS=$(aws ecs describe-task-definition --task-definition rest-service-dev --query "taskDefinition.taskDefinitionArn" --output text)
+          TASK_DEFINITION_EXISTS=$(aws ecs describe-task-definition --task-definition $SERVICE_NAME --query "taskDefinition.taskDefinitionArn" --output text)
 
           if [ "$TASK_DEFINITION_EXISTS" == "None" ]; then
-            echo "Task definition 'rest-service-dev' does not exist. Creating a new task definition."
+            echo "Task definition '$SERVICE_NAME' does not exist. Creating a new task definition."
 
             # Sostituisci <IMAGE_PLACEHOLDER> con il nuovo URL dell'immagine
             sed -i "s|<IMAGE_PLACEHOLDER>|$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME|g" task-definition.json
-
+            
             # Registra una nuova task definition
             aws ecs register-task-definition --cli-input-json file://task-definition.json
           else
-            echo "Task definition 'rest-service-dev' exists. Updating image tag."
+            echo "Task definition '$SERVICE_NAME' exists. Updating image tag."
 
             # Aggiorna l'immagine nella task definition esistente
-            TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition rest-service-dev)
+            TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition $SERVICE_NAME)
             UPDATED_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq '.taskDefinition | .containerDefinitions[0].image = "'$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME'"')
 
             echo $UPDATED_TASK_DEFINITION > updated-task-definition.json
