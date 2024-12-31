@@ -66,29 +66,28 @@ jobs:
           REGION=eu-south-1  # Sostituisci con la tua regione
           
           # Verifica se la task definition esiste
-          TASK_DEFINITION_EXISTS=$(aws ecs describe-task-definition --task-definition $SERVICE_NAME --query "taskDefinition.taskDefinitionArn" --output text)
+          TASK_DEFINITION_EXISTS=$(aws ecs list-task-definitions --family-prefix $SERVICE_NAME --query "taskDefinitionArns" --output text)
 
           if [ "$TASK_DEFINITION_EXISTS" == "None" ]; then
             echo "Task definition '$SERVICE_NAME' does not exist. Creating a new task definition."
-
+            
             # Sostituisci <IMAGE_PLACEHOLDER> con il nuovo URL dell'immagine
             sed -i "s|<IMAGE_PLACEHOLDER>|$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME|g" task-definition.json
-            
+          
             # Registra una nuova task definition
             aws ecs register-task-definition --cli-input-json file://task-definition.json
           else
             echo "Task definition '$SERVICE_NAME' exists. Updating image tag."
-
+          
             # Aggiorna l'immagine nella task definition esistente
             TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition $SERVICE_NAME)
             UPDATED_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq '.taskDefinition | .containerDefinitions[0].image = "'$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME'"')
-
+          
             echo $UPDATED_TASK_DEFINITION > updated-task-definition.json
-
+          
             # Registra la task definition aggiornata
             aws ecs register-task-definition --cli-input-json file://updated-task-definition.json
           fi
-
       # Step 7: Aggiorna il servizio ECS
       - name: Update ECS Service
         run: |
