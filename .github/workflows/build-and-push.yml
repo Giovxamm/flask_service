@@ -8,14 +8,13 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     env:
       REPO_NAME: rest-service-repo-dev  # Nome del repository ECR
       IMAGE_NAME: rest-service-dev      # Nome dell'immagine
       REGION: eu-south-1                # Regione di ECR
 
     steps:
-      # Step 1: Checkout del codice dal repository
+      # Step 1: Checkout del codice
       - name: Checkout Code
         uses: actions/checkout@v3
 
@@ -31,27 +30,22 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      # Step 4: Verifica se il repository ECR esiste, altrimenti crealo
-      - name: Ensure ECR Repository Exists
-        run: |
-          aws ecr describe-repositories --region $REGION --repository-names $REPO_NAME || \
-          aws ecr create-repository --region $REGION --repository-name $REPO_NAME
-
-      # Step 5: Build e Push dell'immagine Docker
+      # Step 4: Build e Push dell'immagine Docker
       - name: Build and Push Docker Image
         run: |
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          
+          REGION=${{ env.REGION }}
+
           # Build dell'immagine Docker
           docker build -t $IMAGE_NAME .
 
-          # Tagging dell'immagine
+          # Tagging dell'immagine con il nome del repository ECR
           docker tag $IMAGE_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME
 
           # Push dell'immagine su Amazon ECR
           docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME
 
-      # Step 6: Recupera la configurazione dall'infrastruttura
+      # Step 5: Recupera configurazioni da Terraform
       - name: Retrieve Configuration
         run: |
           aws s3 cp s3://shared-state/environments/dev/terraform.tfstate terraform.tfstate
@@ -63,26 +57,37 @@ jobs:
           echo "SUBNETS=$SUBNETS" >> $GITHUB_ENV
           echo "SG_ID=$SG_ID" >> $GITHUB_ENV
 
-      # Step 7: Aggiorna la Task Definition
-      - name: Update Task Definition
+      # Step 6: Aggiorna la Task Definition
+      - name: Update or Create Task Definition
         run: |
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGION=${{ env.REGION }}
 
-          # Verifica il valore dell'account ID e della regione
-          echo "AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
-          echo "REGION: $REGION"
-          echo "IMAGE_NAME: $IMAGE_NAME"
+          # Verifica se la task definition esiste
+          TASK_DEFINITION_EXISTS=$(aws ecs describe-task-definition --task-definition rest-service-dev --query "taskDefinition.taskDefinitionArn" --output text)
 
-          # Aggiorna la Task Definition con il nuovo tag dell'immagine
-          TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition rest-service-dev)
+          if [ "$TASK_DEFINITION_EXISTS" == "None" ]; then
+            echo "Task definition 'rest-service-dev' does not exist. Creating a new task definition."
 
-          UPDATED_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq '.taskDefinition | .containerDefinitions[0].image = "'$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME'"')
+            # Sostituisci <IMAGE_PLACEHOLDER> con il nuovo URL dell'immagine
+            sed -i "s|<IMAGE_PLACEHOLDER>|$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME|g" task-definition.json
 
-          echo $UPDATED_TASK_DEFINITION > updated-task-definition.json
+            # Registra una nuova task definition
+            aws ecs register-task-definition --cli-input-json file://task-definition.json
+          else
+            echo "Task definition 'rest-service-dev' exists. Updating image tag."
 
-          aws ecs register-task-definition --cli-input-json file://updated-task-definition.json
+            # Aggiorna l'immagine nella task definition esistente
+            TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition rest-service-dev)
+            UPDATED_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq '.taskDefinition | .containerDefinitions[0].image = "'$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO_NAME:$IMAGE_NAME'"')
 
-      # Step 8: Aggiorna il servizio ECS
+            echo $UPDATED_TASK_DEFINITION > updated-task-definition.json
+
+            # Registra la task definition aggiornata
+            aws ecs register-task-definition --cli-input-json file://updated-task-definition.json
+          fi
+
+      # Step 7: Aggiorna il servizio ECS
       - name: Update ECS Service
         run: |
           aws ecs update-service \

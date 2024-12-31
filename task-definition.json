@@ -1,0 +1,31 @@
+{
+    "family": "rest-service-dev",
+    "containerDefinitions": [
+      {
+        "name": "rest-service",
+        "image": "<IMAGE_PLACEHOLDER>",
+        "cpu": 256,
+        "memory": 512,
+        "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/service/rest-service",
+          "awslogs-region": "eu-south-1",
+          "awslogs-stream-prefix": "rest-service"
+          }
+        },
+        "portMappings": [
+          {
+            "containerPort": 80,
+            "hostPort": 80,
+            "protocol": "tcp"
+          }
+        ]
+      }
+    ],
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "256",
+    "memory": "512",
+    "executionRoleArn": "arn:aws:iam::770161823328:role/ecsExecutionRole"
+  }
